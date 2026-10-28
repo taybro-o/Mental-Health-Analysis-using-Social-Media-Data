@@ -1,0 +1,33 @@
+# Python / Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Reference repository
+reference_repo/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Model checkpoints and weights
+*.h5
+*.keras
+*.onnx
+*.pkl
+models/checkpoints/
+models/saved_cedv/
+
+# Data caches & scratch
+data/cache/
+*.parquet
+
+# IDEs & System
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.log
