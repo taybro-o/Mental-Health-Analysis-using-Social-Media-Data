@@ -24,6 +24,9 @@ models/saved_cedv/
 # Data caches & scratch
 data/cache/
 *.parquet
+data/glove*
+*.txt
+!requirements.txt
 
 # IDEs & System
 .vscode/

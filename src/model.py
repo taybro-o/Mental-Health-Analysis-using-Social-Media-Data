@@ -70,18 +70,62 @@ class MaskedFeaturePooling(layers.Layer):
         return super().get_config()
 
 
+def load_glove_embeddings(
+    glove_path: str = "data/glove.6B.50d.txt",
+    vocab: Optional[List[str]] = None,
+    embedding_dim: int = 50,
+) -> np.ndarray:
+    """
+    Load GloVe pre-trained embeddings and align with vocabulary.
+    Returns embedding matrix of shape (len(vocab), embedding_dim).
+    """
+    if vocab is None:
+        raise ValueError("Vocabulary list is required to build GloVe embedding matrix.")
+    
+    vocab_size = len(vocab)
+    embedding_matrix = np.zeros((vocab_size, embedding_dim), dtype=np.float32)
+    
+    embeddings_index = {}
+    with open(glove_path, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip().split(" ")
+            word = parts[0]
+            vector = np.asarray(parts[1:], dtype=np.float32)
+            if len(vector) == embedding_dim:
+                embeddings_index[word] = vector
+                
+    hits = 0
+    misses = 0
+    for i, word in enumerate(vocab):
+        if i == 0:
+            # Token 0 is padding in TextVectorization, strictly zeros
+            continue
+        vector = embeddings_index.get(word)
+        if vector is not None:
+            embedding_matrix[i] = vector
+            hits += 1
+        else:
+            embedding_matrix[i] = np.random.normal(loc=0.0, scale=0.05, size=(embedding_dim,))
+            misses += 1
+            
+    print(f"GloVe {embedding_dim}d Alignment: {hits} hits ({hits / max(1, len(vocab)) * 100:.1f}%), {misses} OOV words")
+    return embedding_matrix
+
+
 def build_cedv_model(
-    vocab_size: int = 15000,
+    vocab_size: int = 30000,
     seq_length: int = 128,
-    embedding_dim: int = 128,
+    embedding_dim: int = 50,
     lstm_units: int = 64,
     conv_filters: int = 128,
     dense_units: int = 64,
     num_classes: int = NUM_CLASSES,
     vectorizer: Optional[layers.TextVectorization] = None,
+    embedding_matrix: Optional[np.ndarray] = None,
 ) -> keras.Model:
     """
     Construct CEDV native Keras model with mask-aware pooling for raw text input.
+    Supports warm-starting with pre-trained GloVe embedding matrix.
     """
     if vectorizer is None:
         vectorizer = layers.TextVectorization(
@@ -97,12 +141,23 @@ def build_cedv_model(
     # Text vectorization layer produces integer token IDs
     token_ids = vectorizer(text_input)
     
-    # Embedding with Spatial Dropout
-    embedded = layers.Embedding(
-        input_dim=vocab_size,
-        output_dim=embedding_dim,
-        name="embedding",
-    )(token_ids)
+    # Embedding with optional pre-trained GloVe warm-start (trainable=True)
+    if embedding_matrix is not None:
+        embedding_layer = layers.Embedding(
+            input_dim=vocab_size,
+            output_dim=embedding_dim,
+            weights=[embedding_matrix],
+            trainable=True,
+            name="embedding",
+        )
+    else:
+        embedding_layer = layers.Embedding(
+            input_dim=vocab_size,
+            output_dim=embedding_dim,
+            trainable=True,
+            name="embedding",
+        )
+    embedded = embedding_layer(token_ids)
     dropped_emb = layers.SpatialDropout1D(0.25, name="spatial_dropout")(embedded)
     
     # Temporal sequence modeling via Bidirectional LSTM

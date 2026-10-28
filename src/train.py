@@ -30,7 +30,7 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 import tensorflow as tf
 import keras
 
-from src.model import build_cedv_model, simplex_distribution, zscore_distribution
+from src.model import build_cedv_model, load_glove_embeddings, simplex_distribution, zscore_distribution
 from src.preprocess import (
     CLASS_LABELS,
     INDEX_TO_LABEL,
@@ -161,19 +161,21 @@ def plot_and_save_confusion_matrix(
 
 def run_training_pipeline(
     data_path: str = "data/dataset.csv",
+    glove_path: Optional[str] = "data/glove.6B.50d.txt",
     checkpoint_dir: str = "models/checkpoints",
     model_save_path: str = "models/saved_cedv/cedv_model.keras",
     reports_dir: str = "reports",
-    vocab_size: int = 25000,
+    vocab_size: int = 30000,
     seq_length: int = 128,
+    embedding_dim: int = 50,
     batch_size: int = 32,
-    epochs: int = 25,
+    epochs: int = 30,
     learning_rate: float = 1e-3,
     label_smoothing: float = 0.05,
     enable_mixed_precision: bool = True,
 ) -> Dict[str, object]:
     """
-    Executes full data loading, vectorizer adaptation, model compilation, training, and evaluation.
+    Executes full data loading, vectorizer adaptation, GloVe alignment, model compilation, training, and evaluation.
     """
     start_time = time.time()
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -207,7 +209,8 @@ def run_training_pipeline(
     )
     vectorizer.adapt(train_df["clean_text"].values)
     vocab = vectorizer.get_vocabulary()
-    logger.info("Vocabulary adapted. Actual vocab size: %d words.", len(vocab))
+    actual_vocab_size = len(vocab)
+    logger.info("Vocabulary adapted. Actual vocab size: %d words.", actual_vocab_size)
 
     # 5. Build tf.data Datasets
     train_ds = create_tf_dataset(
@@ -229,17 +232,30 @@ def run_training_pipeline(
         shuffle=False,
     )
 
-    # 6. Build & Compile CEDV Model
-    logger.info("Instantiating CEDV architecture...")
+    # 6. Load Pre-trained GloVe Embeddings (if available)
+    embedding_matrix = None
+    if glove_path and os.path.exists(glove_path):
+        logger.info("Aligning pre-trained GloVe %dd vectors from %s...", embedding_dim, glove_path)
+        embedding_matrix = load_glove_embeddings(
+            glove_path=glove_path,
+            vocab=vocab,
+            embedding_dim=embedding_dim,
+        )
+    else:
+        logger.info("GloVe embeddings not found at %s. Initializing embedding layer from scratch.", glove_path)
+
+    # 7. Build & Compile CEDV Model
+    logger.info("Instantiating CEDV architecture (vocab=%d, emb_dim=%d)...", actual_vocab_size, embedding_dim)
     model = build_cedv_model(
-        vocab_size=vocab_size,
+        vocab_size=actual_vocab_size,
         seq_length=seq_length,
-        embedding_dim=128,
+        embedding_dim=embedding_dim,
         lstm_units=64,
         conv_filters=128,
         dense_units=64,
         num_classes=NUM_CLASSES,
         vectorizer=vectorizer,
+        embedding_matrix=embedding_matrix,
     )
 
     loss_fn = keras.losses.CategoricalCrossentropy(
@@ -371,13 +387,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="CEDV Model Training & Evaluation")
     parser.add_argument("--data", type=str, default="data/dataset.csv", help="Path to input dataset CSV")
-    parser.add_argument("--epochs", type=int, default=25, help="Maximum epochs to train")
+    parser.add_argument("--glove", type=str, default="data/glove.6B.50d.txt", help="Path to pre-trained GloVe embedding file")
+    parser.add_argument("--epochs", type=int, default=30, help="Maximum epochs to train")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     args = parser.parse_args()
 
     run_training_pipeline(
         data_path=args.data,
+        glove_path=args.glove,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,

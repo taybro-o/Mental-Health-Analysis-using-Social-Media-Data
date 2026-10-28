@@ -63,13 +63,13 @@ CEDV uses **ONE clean, native TensorFlow/Keras architecture** to eliminate Keras
 Input (Raw Strings)
        │
        ▼
-TextVectorization Layer (max_tokens=25,000, output_sequence_length=128)
+TextVectorization Layer (max_tokens=30,000, output_sequence_length=128)
        │
        ▼
-Embedding Layer (dim=128, mask_zero=True)
+Embedding Layer (50-dim, GloVe 6B 50d Warm-Start, trainable=True)
        │
        ▼
-SpatialDropout1D (0.2)
+SpatialDropout1D (0.25)
        │
        ▼
 Bidirectional LSTM (64 units, return_sequences=True)
@@ -78,10 +78,10 @@ Bidirectional LSTM (64 units, return_sequences=True)
 Conv1D (128 filters, kernel_size=3, padding='same', activation='relu')
        │
        ▼
-GlobalMaxPooling1D
+MaskedFeaturePooling (Masked Max Pooling + Masked Average Pooling, ignores pad zeros)
        │
        ▼
-Dense (64 units, ReLU) + Dropout (0.3)
+Dense (64 units, ReLU) + Dropout (0.4) + L2 Regularization
        │
        ▼
 Dense (8 units, Linear Logits z, dtype='float32')
